@@ -1,6 +1,6 @@
 # Terrain Persistence
 
-Experimental server-only Enshrouded mod that journals terrain edits so they can be restored after a server restart. Requires Enshwick alpha 11, installed separately. Restart tests passed inside a real claim and on actual player edits outside claims. The player confirmed that the oversized-hole defect is fixed and intended cuts retain their correct size.
+Experimental server-only Enshrouded mod that preserves terrain edits inside and outside Flame Altar claims, with configurable ore and clay regeneration. Requires Enshwick alpha 11, installed separately.
 
 ## Game update compatibility
 
@@ -47,8 +47,6 @@ The journal stores sparse changes to air and terrain in 8×8×8 voxel bricks, in
 
 On startup, saved bricks are restored incrementally, loading padded neighboring terrain columns at all seven LOD levels before replay to avoid collateral terrain erasure, up to eight bricks per 100 ms tick. Loaded world chunks also trigger restoration. Worlds with many saved bricks can take longer to finish restoring. Captured edits are drained at up to 32 bricks per 100 ms tick and written to the journal; a normal shutdown also flushes pending captures. A crash can lose captures still waiting in memory.
 
-In a frozen-fixture validation, actual player edits changed 311 voxels across 10 bricks. After a cold restart, all 262,144 finest-level cells and all seven LOD levels had zero differences. Nine unit tests also passed. A separate copy of a real claimed world also passed: a native terrain addition inside its Flame Altar claim was captured in eight wholly claimed bricks, then the surrounding 262,144 finest-level cells and all seven LOD levels matched exactly after restart. The player also confirmed that the unintended oversized hole is gone and the intended cuts retain their correct size.
-
 Back up the journal together with the matching savegame. The journal is stored under a per-world key; if a world is migrated or its key changes, check that the journal still belongs to that save before copying or reusing it.
 
 Removing this mod stops its persistence. Keep the journal if you may reinstall it; without the mod, terrain outside claims is left to vanilla save behavior and may reset.
@@ -65,6 +63,6 @@ cargo +1.99.1-x86_64-pc-windows-gnu build --release --locked
 ./Package-Mod.ps1 -SkipBuild
 ```
 
-The release build excludes disposable-server test commands. The optional `runtime-test` feature enables commands used by `Invoke-TestCommand.ps1` on an isolated test server. Game binaries and saves are not included. `tools-build.ps1` is a convenience wrapper for the isolated development toolchain, not needed by CI.
+Game binaries, saves and local development harnesses are not included.
 
-GitHub Actions runs tests and creates a mod-only ZIP and SHA-256 checksum for pushes, pull requests and manual runs. Push a tag matching the Cargo version (for example `v0.4.0`) to publish the GitHub-built files as release assets. The workflow does not download or package the loader or game.
+GitHub Actions runs unit tests and creates a mod-only ZIP and SHA-256 checksum for pushes, pull requests and manual runs. Push a tag matching the Cargo version (for example `v0.4.1`) to publish the GitHub-built files as release assets. The workflow does not download or package the loader or game.

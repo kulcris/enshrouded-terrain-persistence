@@ -6,3 +6,10 @@
 /dist/
 /verification/
 __pycache__/
+/Invoke-TestCommand.ps1
+/Start-TestServer.ps1
+/Stop-TestServer.ps1
+/tools-build.ps1
+/*.py
+/src/selftest.rs
+/src/mip_probe.rs
