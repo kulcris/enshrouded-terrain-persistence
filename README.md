@@ -2,6 +2,8 @@
 
 Keep your terrain changes after a server restart—even outside Flame Altar claims. Includes a configurable respawn timer for ore and clay.
 
+**Disclaimer:** This mod is "vibe coded" with AI assistance. Bugs may occur—back up your world before using it.
+
 **For Windows dedicated servers. Players do not need to install the mod.**
 
 [Download the latest release](https://github.com/kulcris/enshrouded-terrain-persistence/releases/latest)
