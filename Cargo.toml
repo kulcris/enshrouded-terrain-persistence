@@ -1,6 +1,6 @@
 [package]
 name = "terrain-persistence"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 description = "Server-side terrain persistence inside and outside Flame Altar zones"
 license = "MIT"

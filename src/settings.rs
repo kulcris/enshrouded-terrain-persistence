@@ -5,12 +5,12 @@ pub struct Settings {
     /// Regenerate mined ore and clay voxels after the delay. Loot boxes are unchanged.
     #[config(restart)]
     pub respawn_ores: bool,
-    /// Seconds after the most recent mining in a 4-metre voxel brick.
-    /// Deadlines are saved and continue across restarts, including offline time.
+    /// Respawn delay in seconds. Nearby mining restarts the local countdown.
+    /// Timers survive restarts, and time spent offline counts toward respawning.
     #[config(restart, range = 1..=31536000)]
     pub ore_respawn_seconds: u64,
-    /// Extra ore voxel material IDs, in addition to ores identified from game items.
-    /// See ore-materials.txt in this mod's data folder for the running game's IDs.
+    /// Optional extra resource material IDs. Leave empty for default ores and clay.
+    /// Available IDs are listed in mod-data/kulcr.terrain-persistence/ore-materials.txt.
     #[config(restart, range = 1..=127)]
     pub extra_ore_materials: Vec<u8>,
 }

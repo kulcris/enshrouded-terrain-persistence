@@ -1,29 +1,36 @@
-# Terrain Persistence
+# Enshrouded Terrain Persistence
 
-Experimental server-only Enshrouded mod that preserves terrain edits inside and outside Flame Altar claims, with configurable ore and clay regeneration. Requires Enshwick alpha 11, installed separately.
+Keep your terrain changes after a server restart—even outside Flame Altar claims. Includes a configurable respawn timer for ore and clay.
 
-## Game update compatibility
+**For Windows dedicated servers. Players do not need to install the mod.**
 
-Version 0.3.0 finds the terrain commit by a unique code signature instead of a fixed address or game-version list. Enshwick resolves the remaining engine APIs through its own tables and pattern fallback. There is no exact-build restriction in the mod manifest.
-
-The signature was checked against server builds `26083076` (PE age `399`) and `26319703` (PE age `479`); runtime testing uses the latter. Future updates that retain the required native code and layouts can work without rebuilding this mod. An engine or loader API change can still require an update: missing or ambiguous signatures disable the mod. Check the Enshwick logs after game updates before relying on persistence. Keep matching savegame and journal backups.
+[Download the latest release](https://github.com/kulcris/enshrouded-terrain-persistence/releases/latest)
 
 ## Install
 
-Put the files in the dedicated server installation using this layout:
+1. Stop your server and back up its save folder and `mod-data` folder, if present.
+2. Install [Enshwick alpha 11](https://github.com/enshwick/enshwick/releases) separately, following the loader's instructions.
+3. Download `terrain-persistence-<version>-windows.zip` from the latest release.
+4. Extract it and copy the `mods` folder into your server folder, beside `enshrouded_server.exe`. Merge it with the existing `mods` folder.
+5. Start the server.
 
-    <server>/
-      powrprof.dll
-      mods/
-        enshwick/
-          enshwick.dll
-        terrain_persistence.dll
+The mod file should be at:
 
-Install the [Enshwick alpha 11 loader](https://github.com/enshwick/enshwick/releases) separately, following its installation instructions. This mod's release ZIP contains only `mods/terrain_persistence.dll`, documentation, a config example and a checksum manifest; no loader files. Back up the server save before first use.
+```text
+<server folder>/mods/terrain_persistence.dll
+```
 
-## Ore and clay respawn configuration
+The loader is not included in the download. The mod starts recording new terrain edits once installed; it cannot recover changes that were already lost.
 
-The loader creates `mod-configs/kulcr.terrain-persistence.toml` on first start:
+## Ore and clay respawns
+
+By default, mined ore and clay return after **30 minutes**. Nearby mining shares a timer; mining again in that area restarts the countdown. Other terrain edits remain saved, and player building blocks are left intact.
+
+Edit this file after the first server start:
+
+```text
+mod-configs/kulcr.terrain-persistence.toml
+```
 
 ```toml
 respawn_ores = true
@@ -31,38 +38,30 @@ ore_respawn_seconds = 1800
 extra_ore_materials = []
 ```
 
-Restart the server after changing these settings. The default delay is 30 minutes. Mining an ore or clay voxel starts a timer for its 4-metre brick; further mining in that brick restarts its timer. Only the original ore/clay voxel values are restored, preserving surrounding terrain edits and player building blocks. Materials are identified from the running game's yielded-item names containing an `Ore` or `Clay` token, including iron, copper, tin, silver, gold and celesthium. Additional mineral resources can be included with `extra_ore_materials`; the running material names and IDs are listed in `mod-data/kulcr.terrain-persistence/ore-materials.txt`.
+| Setting | What it does |
+| --- | --- |
+| `respawn_ores` | Set to `false` to keep mined ore and clay removed. |
+| `ore_respawn_seconds` | Respawn delay in seconds: `600` = 10 minutes, `1800` = 30 minutes, `3600` = 1 hour. |
+| `extra_ore_materials` | Optional additional resource material IDs. Leave empty for the default ore and clay selection. |
 
-Timers and original ore shapes are saved in each world's `ore-respawn` directory. Offline time counts toward the deadline. Set `respawn_ores = false` to keep ore edits persistent; saved timers remain available if re-enabled, and overdue timers then run. Changing the delay affects new mining, not already saved deadlines. This tracks edits made after installing this version; it cannot reconstruct ores mined before tracking began. Back up the whole world mod-data directory along with the savegame.
+**Restart the server after changing settings.** The default selection includes copper, tin, iron, silver, gold, celesthium and clay. For additional resources, material IDs are listed in `mod-data/kulcr.terrain-persistence/ore-materials.txt`.
 
-Loot boxes retain the game's existing behavior; this mod adds no loot-box handling. The terrain capture hooks require native code; the installed Enshwick Luau API does not expose them, so this remains a DLL mod.
+Timers survive restarts, and time spent offline counts toward respawning. Changing the delay affects new timers. Disabling respawns keeps existing timers saved; re-enabling it allows overdue respawns to run.
 
-## Terrain journal
+## What is saved?
 
-Journal files are stored alongside the server data at:
+Terrain edits inside and outside claims are preserved. Loot boxes, trees, enemies and other world objects keep their normal game behavior.
 
-    mod-data/kulcr.terrain-persistence/worlds/<world-key>/terrain-delta/*.brick
+Large edited areas may take a short time to restore after startup. Use a normal server shutdown so pending edits can be saved.
 
-The journal stores sparse changes to air and terrain in 8×8×8 voxel bricks, including edits inside and outside Flame Altar claims. Unchanged voxels are omitted, so natural terrain is not captured as a full snapshot. The older `terrain` journal namespace is intentionally ignored because it may contain unsafe full snapshots. The mod does not persist general entities, chests, trees, or other non-voxel world objects. Buildings are preserved during replay.
+## Updating and backups
 
-On startup, saved bricks are restored incrementally, loading padded neighboring terrain columns at all seven LOD levels before replay to avoid collateral terrain erasure, up to eight bricks per 100 ms tick. Loaded world chunks also trigger restoration. Worlds with many saved bricks can take longer to finish restoring. Captured edits are drained at up to 32 bricks per 100 ms tick and written to the journal; a normal shutdown also flushes pending captures. A crash can lose captures still waiting in memory.
+Stop the server before replacing `mods/terrain_persistence.dll` with a newer version. Keep your existing configuration and mod data.
 
-Back up the journal together with the matching savegame. The journal is stored under a per-world key; if a world is migrated or its key changes, check that the journal still belongs to that save before copying or reusing it.
+Back up both the server's save folder and the entire `mod-data/kulcr.terrain-persistence` folder together. The mod data belongs to that world; keep it with the matching save when moving servers.
 
-Removing this mod stops its persistence. Keep the journal if you may reinstall it; without the mod, terrain outside claims is left to vanilla save behavior and may reset.
+This mod is experimental. Game updates may require an update to the mod or loader. If it stops working, check `logs/enshwick/mods/kulcr.terrain-persistence.log` and the other Enshwick logs.
 
-## Build
+## Removing the mod
 
-The Enshwick dependency is pinned to Git commit `e0c8a0bc0e9571860ca9e76ac99a8db4a66e5172`; `Cargo.lock` pins its dependencies. On Windows with Rust 1.99.1 and its GNU toolchain:
-
-```powershell
-rustup toolchain install 1.99.1-x86_64-pc-windows-gnu --profile minimal
-$env:RUSTFLAGS = '-C linker=rust-lld -C linker-flavor=ld.lld -C link-self-contained=yes'
-cargo +1.99.1-x86_64-pc-windows-gnu test --lib --locked
-cargo +1.99.1-x86_64-pc-windows-gnu build --release --locked
-./Package-Mod.ps1 -SkipBuild
-```
-
-Game binaries, saves and local development harnesses are not included.
-
-GitHub Actions runs unit tests and creates a mod-only ZIP and SHA-256 checksum for pushes, pull requests and manual runs. Push a tag matching the Cargo version (for example `v0.4.1`) to publish the GitHub-built files as release assets. The workflow does not download or package the loader or game.
+Stop the server, remove `mods/terrain_persistence.dll`, then start it again. Keep your mod-data backup if you might reinstall. Without the mod, terrain outside claims may reset according to the game's normal behavior.

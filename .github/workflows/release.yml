@@ -39,7 +39,7 @@ jobs:
 
       - name: Package mod
         shell: pwsh
-        run: ./Package-Mod.ps1 -SkipBuild
+        run: ./.github/package.ps1
 
       - name: Upload packaged ZIP
         uses: actions/upload-artifact@v4
@@ -81,4 +81,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $files = @(Get-ChildItem dist -File | Select-Object -ExpandProperty FullName)
-          gh release create "$env:GITHUB_REF_NAME" @files --title "$env:GITHUB_REF_NAME" --generate-notes --verify-tag
+          gh release create "$env:GITHUB_REF_NAME" @files --title "Terrain Persistence $env:GITHUB_REF_NAME" --notes-file .github/RELEASE-NOTES.md --verify-tag
