@@ -194,15 +194,23 @@ fn decode(b: &[u8]) -> io::Result<(BrickKey, Brick)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
     fn dir() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "voxel-journal-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ))
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        loop {
+            let path = std::env::temp_dir().join(format!(
+                "voxel-journal-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            // Reserve the directory atomically: parallel tests must never
+            // share files, even on clocks with coarse timestamp resolution.
+            match fs::create_dir(&path) {
+                Ok(()) => return path,
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => panic!("could not create test directory: {e}"),
+            }
+        }
     }
     fn word(m: u8, fill: u8) -> u16 {
         u16::from_le_bytes([m, fill])
