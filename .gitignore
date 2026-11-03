@@ -1,0 +1,8 @@
+/tools/
+/test-server/
+/delta-test-server/
+/modding-tools/
+/target/
+/dist/
+/verification/
+__pycache__/

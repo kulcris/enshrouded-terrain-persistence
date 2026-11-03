@@ -1,0 +1,26 @@
+[package]
+name = "terrain-persistence"
+version = "0.4.0"
+edition = "2024"
+description = "Server-side terrain persistence inside and outside Flame Altar zones"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.enshwick]
+id = "kulcr.terrain-persistence"
+side = "server"
+name = "Terrain Persistence"
+join = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+enshwick = { git = "https://github.com/enshwick/enshwick", rev = "e0c8a0bc0e9571860ca9e76ac99a8db4a66e5172", features = ["unstable"] }
+
+[features]
+runtime-test = []
+
+[profile.release]
+panic = "unwind"
