@@ -96,8 +96,8 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
 name = "enshwick"
-version = "1.0.0-alpha.11"
-source = "git+https://github.com/enshwick/enshwick?rev=e0c8a0bc0e9571860ca9e76ac99a8db4a66e5172#e0c8a0bc0e9571860ca9e76ac99a8db4a66e5172"
+version = "1.0.0-alpha.13"
+source = "git+https://github.com/enshwick/enshwick?rev=945a1b8f0c9d1971679d9f3bc3dcecc127a5bcad#945a1b8f0c9d1971679d9f3bc3dcecc127a5bcad"
 dependencies = [
  "aho-corasick",
  "bcdec_rs",
@@ -107,6 +107,7 @@ dependencies = [
  "document-features",
  "enshwick-macros",
  "fastrand",
+ "hound",
  "memchr",
  "postcard",
  "rustc-hash",
@@ -120,8 +121,8 @@ dependencies = [
 
 [[package]]
 name = "enshwick-macros"
-version = "1.0.0-alpha.11"
-source = "git+https://github.com/enshwick/enshwick?rev=e0c8a0bc0e9571860ca9e76ac99a8db4a66e5172#e0c8a0bc0e9571860ca9e76ac99a8db4a66e5172"
+version = "1.0.0-alpha.13"
+source = "git+https://github.com/enshwick/enshwick?rev=945a1b8f0c9d1971679d9f3bc3dcecc127a5bcad#945a1b8f0c9d1971679d9f3bc3dcecc127a5bcad"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -146,6 +147,12 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
+name = "hound"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "indexmap"
@@ -177,6 +184,12 @@ name = "konst_macro_rules"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4933f3f57a8e9d9da04db23fb153356ecaf00cbd14aee46279c33dc80925c37"
+
+[[package]]
+name = "libc"
+version = "0.2.191"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "litrs"
@@ -218,6 +231,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "redb"
+version = "4.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b317ef681e18f6091efbfab532eaf924a135c492d9d0299d0fbfae07e92a39b"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -303,11 +325,13 @@ dependencies = [
 
 [[package]]
 name = "terrain-persistence"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "enshwick",
+ "redb",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

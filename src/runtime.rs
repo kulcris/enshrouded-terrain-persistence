@@ -4,7 +4,7 @@ use crate::{
 };
 use enshwick::{
     Load, Off,
-    events::{ChunkLoaded, ShutdownStarted, WorldLoaded},
+    events::{ShutdownStarted, TerrainPageLoaded, WorldLoaded},
     voxels::{Voxel, VoxelBox, VoxelMaterial, VoxelPos},
     world::{TransactionId, TransactionStatus},
 };
@@ -17,6 +17,7 @@ use std::{
 
 #[derive(Default)]
 struct State {
+    settings: crate::settings::Settings,
     journal: Option<Journal>,
     ores: Option<crate::ores::Ores>,
     restore: VecDeque<Brick>,
@@ -46,16 +47,15 @@ fn voxel(w: u16) -> Voxel {
     )
 }
 pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
-    let settings: crate::settings::Settings = load.config()?;
-    let catalog = if settings.respawn_ores {
-        Some(crate::ore_materials::Catalog::resolve(load)?)
-    } else {
-        None
-    };
+    let settings = Arc::new(Mutex::new(crate::settings::Settings::default()));
+    let configured = settings.clone();
+    load.on_settings(move |value: &crate::settings::Settings| {
+        *configured.lock().unwrap() = value.clone();
+    })?;
+    let catalog = crate::ore_materials::Catalog::resolve(load)?;
     let terrain = load.terrain();
     let world = load.world()?;
     let voxels = load.voxels();
-    let data = load.data_dir()?;
     let state = Arc::new(Mutex::new(State::default()));
     let opened = state.clone();
     load.on::<WorldLoaded>(move |_| {
@@ -63,20 +63,25 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
         hooks::active(false);
         let mut s=opened.lock().unwrap();
         *s=State::default();
+        let mut settings=settings.lock().unwrap().clone();
         let Some(key)=world.key() else { s.failed=true; return; };
-        match Journal::open(data.join("worlds").join(key).join(crate::journal::DIRECTORY)) {
+        let Some(data)=world.data_dir() else {s.failed=true;enshwick::error!("World data folder unavailable");return;};
+        if let Err(e)=crate::legacy::prepare(&data,&key) {s.failed=true;enshwick::error!("Legacy data import refused: {e}");return;}
+        if let Err(e)=crate::settings::upgrade_legacy(&data,&mut settings) {s.failed=true;enshwick::error!("Legacy settings import refused: {e}");return;}
+        s.settings=settings.clone();
+        match Journal::open(data.join(crate::journal::DIRECTORY)) {
             Ok(journal)=> {
-                let keys=journal.keys();
+                let keys=match journal.keys(){Ok(keys)=>keys,Err(e)=>{s.failed=true;enshwick::error!("Journal index refused: {e}");return;}};
                 s.queued.extend(keys.iter().copied());
                 s.restore.extend(keys);
                 enshwick::info!("Opened terrain journal: {} bricks",s.restore.len());
                 s.journal=Some(journal);
                 if settings.respawn_ores {
-                    match crate::ores::Ores::open(data.join("worlds").join(world.key().unwrap()).join("ore-respawn")) {
+                    match crate::ores::Ores::open_shared(data.join("ore-respawn"),s.journal.as_ref().unwrap().store()) {
                         Ok(queue)=>s.ores=Some(queue),
                         Err(e)=>{s.failed=true;enshwick::error!("Ore timers refused: {e}");return;}
                     }
-                    let materials=catalog.as_ref().unwrap().materials(terrain);
+                    let materials=catalog.materials(terrain);
                     let text=materials.iter().map(|(id,name)|format!("{id}: {name}\n")).collect::<String>();
                     let _=std::fs::write(data.join("ore-materials.txt"),text);
                     let ids=materials.iter().filter(|(_,name)|crate::ore_materials::is_ore_item(name))
@@ -95,29 +100,26 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
         }
     })?;
     let closed = state.clone();
-    let ore_delay = settings.ore_respawn_seconds;
     load.on::<ShutdownStarted>(move |_| {
         hooks::active(false);
         let mut s = closed.lock().unwrap();
+        let ore_delay = s.settings.ore_respawn_seconds;
         if let Some(queue) = s.ores.as_mut() {
-            for (k, words) in hooks::take_ores(usize::MAX) {
-                if let Err(e) =
-                    queue.schedule(k, &words, crate::ores::now().saturating_add(ore_delay))
-                {
-                    enshwick::error!("Shutdown ore timer flush failed: {e}");
-                }
+            let updates = hooks::take_ores(usize::MAX);
+            if let Err(e) =
+                queue.schedule_many(&updates, crate::ores::now().saturating_add(ore_delay))
+            {
+                enshwick::error!("Shutdown ore timer flush failed: {e}");
             }
         }
         if let Some(j) = s.journal.as_mut() {
-            for (k, image) in hooks::take(usize::MAX) {
-                if let Err(e) = j.record_delta(k, &image) {
-                    enshwick::error!("Shutdown terrain flush failed: {e}");
-                }
+            if let Err(e) = j.record_deltas(&hooks::take(usize::MAX)) {
+                enshwick::error!("Shutdown terrain flush failed: {e}");
             }
         }
     })?;
     let chunks = state.clone();
-    load.on::<ChunkLoaded>(move |chunk| {
+    load.on::<TerrainPageLoaded>(move |chunk| {
         let mut s = chunks.lock().unwrap();
         let Some(j) = s.journal.as_ref() else {
             return;
@@ -126,7 +128,15 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
         if size == 0 {
             return;
         }
-        let keys = j.keys();
+        let keys = match j.keys() {
+            Ok(keys) => keys,
+            Err(e) => {
+                s.failed = true;
+                hooks::active(false);
+                enshwick::error!("Journal index failed: {e}");
+                return;
+            }
+        };
         for k in keys {
             if k[0] / size == chunk.x && k[2] / size == chunk.z && s.queued.insert(k) {
                 s.restore.push_back(k);
@@ -139,24 +149,27 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
             if s.failed || s.journal.is_none() {
                 return ControlFlow::Continue(());
             }
+            let ore_delay = s.settings.ore_respawn_seconds;
             // Snapshot native edits before any replay, including further edits to saved bricks.
             if let Some(queue) = s.ores.as_mut() {
-                for (k, words) in hooks::take_ores(32) {
-                    if let Err(e) =
-                        queue.schedule(k, &words, crate::ores::now().saturating_add(ore_delay))
-                    {
+                let updates = hooks::take_ores(32);
+                if let Err(e) =
+                    queue.schedule_many(&updates, crate::ores::now().saturating_add(ore_delay))
+                {
+                    for (k, words) in updates {
                         hooks::retry_ores(k, words);
-                        enshwick::error!("Ore timer write failed: {e}");
                     }
+                    enshwick::error!("Ore timer write failed: {e}");
                 }
             }
-            for (k, words) in hooks::take(32) {
-                if let Err(e) = s.journal.as_mut().unwrap().record_delta(k, &words) {
+            let updates = hooks::take(32);
+            if let Err(e) = s.journal.as_mut().unwrap().record_deltas(&updates) {
+                for (k, words) in updates {
                     hooks::retry(k, words);
-                    enshwick::error!("Terrain capture write failed, will retry: {e}");
-                } else {
-                    s.captures += 1;
                 }
+                enshwick::error!("Terrain capture write failed, will retry: {e}");
+            } else {
+                s.captures += updates.len() as u64;
             }
             let active = std::mem::take(&mut s.inflight);
             for (k, id) in active {
@@ -180,11 +193,20 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
                 }
             }
             let n = s.restore.len().min(8);
-            let due = s
+            let due = match s
                 .ores
                 .as_ref()
                 .map(|q| q.due(crate::ores::now(), 8))
-                .unwrap_or_default();
+                .transpose()
+            {
+                Ok(values) => values.unwrap_or_default(),
+                Err(e) => {
+                    s.failed = true;
+                    hooks::active(false);
+                    enshwick::error!("Ore deadline index failed: {e}");
+                    return ControlFlow::Continue(());
+                }
+            };
             for (k, original) in due {
                 if hooks::pending(k) {
                     continue;
@@ -237,7 +259,16 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
                             .collect::<Vec<_>>()
                             .try_into()
                             .unwrap();
-                        if let Some(merged) = s.journal.as_ref().unwrap().merge(k, &current) {
+                        let merged = match s.journal.as_ref().unwrap().merge(k, &current) {
+                            Ok(value) => value,
+                            Err(e) => {
+                                s.failed = true;
+                                hooks::active(false);
+                                enshwick::error!("Terrain record failed: {e}");
+                                break;
+                            }
+                        };
+                        if let Some(merged) = merged {
                             if merged == current {
                                 s.queued.remove(&k);
                                 continue;

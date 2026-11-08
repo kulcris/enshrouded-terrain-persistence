@@ -19,6 +19,18 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Download and verify Enshwick alpha 13 runtime
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'enshwick-alpha13.zip'
+          Invoke-WebRequest -Uri 'https://github.com/enshwick/enshwick/releases/download/v1.0.0-alpha.13/enshwick.zip' -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'c08158ab9d331e02a06c57828e9b7d92451a65da7ad4d42f4dcaeab851184853'
+          if ($actual -ne $expected) { throw "Enshwick alpha 13 checksum mismatch: $actual" }
+          $destination = Join-Path $env:GITHUB_WORKSPACE 'tools/enshwick-alpha13'
+          New-Item -ItemType Directory -Force $destination | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force
+
       - name: Install Rust 1.99.1 with GNU target
         shell: pwsh
         run: |

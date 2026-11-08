@@ -2,36 +2,37 @@
 
 Keep your terrain changes after a server restart—even outside Flame Altar claims. Includes a configurable respawn timer for ore and clay.
 
-**Disclaimer:** This mod is "vibe coded" with AI assistance. Bugs may occur—back up your world before using it.
+**Windows dedicated servers. Players do not need to install the mod.**
 
-**For Windows dedicated servers. Players do not need to install the mod.**
+**Experimental — expect bugs.** This mod is "vibe coded" with AI assistance and has not been tested with extensive terrain changes or heavily modified worlds. Back up your world before using it.
 
 [Download the latest release](https://github.com/kulcris/enshrouded-terrain-persistence/releases/latest)
 
-## Install
+## Install or update
 
-1. Stop your server and back up its save folder and `mod-data` folder, if present.
-2. Install [Enshwick alpha 11](https://github.com/enshwick/enshwick/releases) separately, following the loader's instructions.
-3. Download `terrain-persistence-<version>-windows.zip` from the latest release.
-4. Extract it and copy the `mods` folder into your server folder, beside `enshrouded_server.exe`. Merge it with the existing `mods` folder.
-5. Start the server.
+1. Stop the server. Back up the save folder and existing mod data/settings.
+2. Extract the release ZIP into the folder containing `enshrouded_server.exe`, merging folders and replacing the included files.
+3. If upgrading from v0.4.x, remove the old `mods/terrain_persistence.dll` file. The new mod is in its own folder as shown below. Keep your old `mod-data` and `mod-configs` folders so their journals, timers and settings can be imported.
+4. Start the server.
 
-The mod file should be at:
+**Enshwick Alpha 13 is included.** Use the included loader with this version of the mod. If you use other mods, check that they also support Alpha 13 before replacing their loader.
 
 ```text
-<server folder>/mods/terrain_persistence.dll
+<server folder>/powrprof.dll
+<server folder>/mods/enshwick/enshwick.dll
+<server folder>/mods/terrain-persistence/terrain_persistence.dll
 ```
 
-The loader is not included in the download. The mod starts recording new terrain edits once installed; it cannot recover changes that were already lost.
+The mod records new terrain edits once installed. It cannot recover changes that were already lost.
 
 ## Ore and clay respawns
 
-By default, mined ore and clay return after **30 minutes**. Nearby mining shares a timer; mining again in that area restarts the countdown. Other terrain edits remain saved, and player building blocks are left intact.
+Mined ore and clay return after **30 minutes** by default. Nearby mining shares a timer; mining again in that area restarts the countdown. Other terrain edits stay saved, and player building blocks are preserved.
 
-Edit this file after the first server start:
+After the first start, edit the settings beside your world save. For the default world and save folder:
 
 ```text
-mod-configs/kulcr.terrain-persistence.toml
+savegame/world0-mod-settings/kulcr.terrain-persistence/settings.toml
 ```
 
 ```toml
@@ -43,27 +44,29 @@ extra_ore_materials = []
 | Setting | What it does |
 | --- | --- |
 | `respawn_ores` | Set to `false` to keep mined ore and clay removed. |
-| `ore_respawn_seconds` | Respawn delay in seconds: `600` = 10 minutes, `1800` = 30 minutes, `3600` = 1 hour. |
-| `extra_ore_materials` | Optional additional resource material IDs. Leave empty for the default ore and clay selection. |
+| `ore_respawn_seconds` | Delay in seconds: `600` = 10 minutes, `1800` = 30 minutes, `3600` = 1 hour. |
+| `extra_ore_materials` | Optional additional resource material IDs. Leave empty for the default selection. |
 
-**Restart the server after changing settings.** The default selection includes copper, tin, iron, silver, gold, celesthium and clay. For additional resources, material IDs are listed in `mod-data/kulcr.terrain-persistence/ore-materials.txt`.
+**Restart after changing settings.** The default selection includes copper, tin, iron, silver, gold, celesthium and clay. Additional material IDs are listed in `ore-materials.txt` in this world's mod-data folder.
 
-Timers survive restarts, and time spent offline counts toward respawning. Changing the delay affects new timers. Disabling respawns keeps existing timers saved; re-enabling it allows overdue respawns to run.
+Timers survive restarts, including offline time. Changing the delay affects new timers. Disabling respawns keeps existing timers saved; overdue respawns run when re-enabled.
 
-## What is saved?
+## Saved data and backups
 
-Terrain edits inside and outside claims are preserved. Loot boxes, trees, enemies and other world objects keep their normal game behavior.
+Terrain edits inside and outside claims are preserved. Loot boxes, other lootables, enemies, trees and other world objects keep their normal game behavior; custom respawn timers for those objects are not included.
 
-Large edited areas may take a short time to restore after startup. Use a normal server shutdown so pending edits can be saved.
+Terrain and ore timers share a compact database. For the default world:
 
-## Updating and backups
+```text
+savegame/world0-mod-data/kulcr.terrain-persistence/terrain-delta/records.redb
+```
 
-Stop the server before replacing `mods/terrain_persistence.dll` with a newer version. Keep your existing configuration and mod data.
+Existing journals are imported automatically. Original legacy files are retained as rollback copies; they are no longer updated. The database has a fixed size overhead, so very small journals may use more space, while larger sparse journals benefit from compact records and fewer active files.
 
-Back up both the server's save folder and the entire `mod-data/kulcr.terrain-persistence` folder together. The mod data belongs to that world; keep it with the matching save when moving servers.
+Stop the server before backing up or moving the save and its matching `world0-mod-data` and `world0-mod-settings` folders. Replace `world0` with your world's name, and use your configured save folder if it differs. Keep the old `mod-data` and `mod-configs` backups until you have checked the upgraded world.
 
-This mod is experimental. Game updates may require an update to the mod or loader. If it stops working, check `logs/enshwick/mods/kulcr.terrain-persistence.log` and the other Enshwick logs.
+Large edited areas can take time to restore at startup. Use a normal shutdown to save pending edits. Game or loader updates can require a mod update. Diagnostics are in the timestamped `logs/kulcr.terrain-persistence_*.log` and `logs/enshwick_*.log` files.
 
 ## Removing the mod
 
-Stop the server, remove `mods/terrain_persistence.dll`, then start it again. Keep your mod-data backup if you might reinstall. Without the mod, terrain outside claims may reset according to the game's normal behavior.
+Stop the server and remove `mods/terrain-persistence`, then start it again. Keep your data backups if you might reinstall. Without the mod, terrain outside claims may reset according to the game's normal behavior. Other mods may still require the Enshwick loader.

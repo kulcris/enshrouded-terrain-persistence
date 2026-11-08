@@ -1,11 +1,14 @@
 use enshwick::{Load, Mod, Off};
+mod codec;
 mod hooks;
 mod journal;
+mod legacy;
 mod native;
 mod ore_materials;
 mod ores;
 mod runtime;
 mod settings;
+mod store;
 mod terrain_editor;
 
 struct TerrainPersistence;
