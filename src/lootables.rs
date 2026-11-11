@@ -22,6 +22,7 @@ use std::{
 #[derive(Clone)]
 pub struct Api {
     world: World,
+    chest_reset: Option<Arc<crate::chests::Reset>>,
     inventories: Inventories,
     effects: Effects,
     applied: Field<bool>,
@@ -37,8 +38,6 @@ pub struct Api {
     name_offset: usize,
     inventory_empty: Field<bool>,
     loot_empty: Field<bool>,
-    loot_parent: Field<u32>,
-    loot_labels: Field<u32>,
     random_type: ComponentType,
     area_excluded: Field<bool>,
     orientation: usize,
@@ -47,6 +46,13 @@ pub struct Api {
 impl Api {
     pub fn install(load: &mut Load<'_>) -> Result<Self, Off> {
         let world = load.world()?;
+        let chest_reset = match crate::chests::Reset::resolve(load) {
+            Ok(reset) => Some(Arc::new(reset)),
+            Err(e) => {
+                enshwick::warn!("Chest refill unavailable on this build: {e}");
+                None
+            }
+        };
         let default_inventory = WritableType::resolve(load, "keen::ecs::DefaultInventory")?;
         let applied = default_inventory.field::<bool>(load, "applied")?;
         let table_offset =
@@ -67,8 +73,6 @@ impl Api {
         let loot_empty = WritableType::resolve(load, "keen::ecs::RandomLootLock")?
             .field::<bool>(load, "isEmpty")?;
         let random_type = WritableType::resolve(load, "keen::ecs::RandomLootContainer")?;
-        let loot_parent = random_type.field::<u32>(load, "parentNodeId")?;
-        let loot_labels = random_type.field::<u32>(load, "defaultLabelsId")?;
         let area_excluded = WritableType::resolve(load, "keen::ecs::AreaLootOverride")?
             .field::<bool>(load, "exclude")?;
         let excluded = [
@@ -92,6 +96,7 @@ impl Api {
         }
         let api = Self {
             world,
+            chest_reset,
             inventories: load.inventories()?,
             effects: load.effects(),
             applied,
@@ -108,8 +113,6 @@ impl Api {
                 .map_err(|_| Off::new("template name offset"))?,
             inventory_empty,
             loot_empty,
-            loot_parent,
-            loot_labels,
             random_type: random_type.ty(),
             area_excluded,
             orientation,
@@ -242,8 +245,13 @@ impl Api {
             .unwrap_or(entity)
     }
     fn chest_is_empty(&self, entity: Entity) -> bool {
-        self.world.get(entity, self.inventory_empty) == Some(true)
-            || self.world.get(entity, self.loot_empty) == Some(true)
+        if let Some(empty) = self.world.get(entity, self.loot_empty) {
+            empty
+        } else if self.world.component(entity, self.random_type).is_some() {
+            false
+        } else {
+            self.world.get(entity, self.inventory_empty) == Some(true)
+        }
     }
     fn table(&self, entity: Entity) -> Option<[u8; 16]> {
         let p = self.world.component(entity, self.default_inventory.ty())?;
@@ -278,10 +286,6 @@ impl Api {
             due: 0,
             orientation,
             fill_table: self.table(entity).unwrap_or([0; 16]),
-            loot_context: [
-                self.world.get(entity, self.loot_parent).unwrap_or(0),
-                self.world.get(entity, self.loot_labels).unwrap_or(0),
-            ],
         })
     }
     pub fn clear(&self) {
@@ -323,22 +327,6 @@ impl Runtime {
                     self.initializing.push((entity, record, started));
                 }
                 continue;
-            }
-            if record.key.kind == 1
-                && self
-                    .api
-                    .world
-                    .component(entity, self.api.random_type)
-                    .is_some()
-            {
-                self.api
-                    .world
-                    .set(entity, self.api.loot_parent, record.loot_context[0])
-                    .map_err(io::Error::other)?;
-                self.api
-                    .world
-                    .set(entity, self.api.loot_labels, record.loot_context[1])
-                    .map_err(io::Error::other)?;
             }
             if self
                 .api
@@ -438,11 +426,6 @@ impl Runtime {
                     .iter()
                     .any(|s| s.count > 0);
             if nearby && (missing || empty_chest) {
-                if record.key.kind == 1 && !missing {
-                    if let Some(current) = self.api.record(entity, at, 1) {
-                        record.loot_context = current.loot_context;
-                    }
-                }
                 record.due = if record.key.kind == 1 {
                     now.saturating_add(self.settings.chest_respawn_seconds)
                 } else {
@@ -535,18 +518,26 @@ impl Runtime {
                         .iter()
                         .any(|s| s.count > 0)
                 {
-                    // Recreate the emptied world chest from its own vanilla
-                    // template. No contents are copied or removed from storage.
+                    // Keep the scene entity and rebuild its consumed inventory
+                    // setup. Generic template spawns lack the scene's loot link.
                     let mut retry = record.clone();
-                    if let Some(current) = self.api.record(chest.entity, at, 1) {
-                        retry.loot_context = current.loot_context;
-                    }
-                    retry.due = now.saturating_add(5);
+                    retry.due = now.saturating_add(30);
                     self.timers.schedule(&retry)?;
-                    if let Err(e) = world.destroy(chest.entity) {
-                        enshwick::warn!("Empty world chest reset refused: {e:?}");
+                    if let Some(reset) = self.api.chest_reset.as_ref() {
+                        match reset.reset(chest.entity) {
+                            Ok(_) => {
+                                self.timers.remove(&record.key)?;
+                                enshwick::info!("Refilled world chest at {at:?}");
+                            }
+                            Err(e) => enshwick::warn!("World chest refill failed: {e}"),
+                        }
                     }
                 }
+                continue;
+            }
+            // Missing scene chests need their native scene instance. Do not
+            // manufacture an empty replacement; vanilla resets still apply.
+            if record.key.kind == 1 {
                 continue;
             }
             if existing.iter().any(|p| world.used_item(p.entity).is_some()) {

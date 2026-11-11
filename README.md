@@ -63,7 +63,9 @@ Timers survive restarts, including offline time. Changing the delay affects new 
 
 Set `respawn_chests` and/or `respawn_lootables` to `true` to enable these experimental features. Each has its own delay; `600` is ten minutes and `3600` is one hour. Restart after changing settings.
 
-Only containers and nodes used or harvested while the feature is running are tracked. The mod asks the game to generate loot from its own templates; it does not copy a player's deposited items or restore a saved inventory. It checks for an existing object before spawning a replacement. Player storage, dropped bags, corpses, enemies, and resource nodes inside Flame Altar claims are excluded.
+Already-empty loaded chests also receive a timer. Pickups and nodes are tracked when collected or harvested while the feature is running. The mod asks the game to generate loot from its own templates; it does not copy a player's deposited items or restore a saved inventory. It checks for an existing object before spawning a replacement. Player storage, dropped bags, corpses, enemies, and resource nodes inside Flame Altar claims are excluded.
+
+Chests refill in place, preserving the original scene chest and its loot interaction. Destroyed or removed chests are left to the game's normal resets. Physics drops created by breaking trees or objects are not respawn sources.
 
 Overdue replacements wait until a player is nearby and the area has had time to load. Allow about 15–30 extra seconds near the spot. Normal game resets and natural regrowth still apply and can happen before a custom timer. These timers do not prevent vanilla respawns. Not every quest object or world pickup is a supported resource node.
 

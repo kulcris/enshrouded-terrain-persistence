@@ -1,4 +1,4 @@
-Enshwick Rust SDK (compiled dependency; loader is not included)
+Enshwick Rust SDK and bundled Alpha 13 loader
 https://github.com/enshwick/enshwick
 
 MIT License

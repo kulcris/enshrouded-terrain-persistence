@@ -1,4 +1,5 @@
 use enshwick::{Load, Mod, Off};
+mod chests;
 mod codec;
 mod hooks;
 mod journal;
