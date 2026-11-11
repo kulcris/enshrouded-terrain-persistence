@@ -1,6 +1,6 @@
 # Enshrouded Terrain Persistence
 
-Keep your terrain changes after a server restart—even outside Flame Altar claims. Includes a configurable respawn timer for ore and clay.
+Keep your terrain changes after a server restart—even outside Flame Altar claims. Includes configurable respawn timers for ore and clay, with optional timers for world loot containers and wild resource nodes.
 
 **Windows dedicated servers. Players do not need to install the mod.**
 
@@ -39,6 +39,10 @@ savegame/world0-mod-settings/kulcr.terrain-persistence/settings.toml
 respawn_ores = true
 ore_respawn_seconds = 1800
 extra_ore_materials = []
+respawn_chests = false
+chest_respawn_seconds = 1800
+respawn_lootables = false
+lootable_respawn_seconds = 1800
 ```
 
 | Setting | What it does |
@@ -46,16 +50,28 @@ extra_ore_materials = []
 | `respawn_ores` | Set to `false` to keep mined ore and clay removed. |
 | `ore_respawn_seconds` | Delay in seconds: `600` = 10 minutes, `1800` = 30 minutes, `3600` = 1 hour. |
 | `extra_ore_materials` | Optional additional resource material IDs. Leave empty for the default selection. |
+| `respawn_chests` | Enable timers for supported world loot containers. Disabled by default. |
+| `chest_respawn_seconds` | Delay after a container is observed empty. |
+| `respawn_lootables` | Enable timers for placed world pickups, including bandages, and supported wild resource nodes outside claims. Disabled by default. |
+| `lootable_respawn_seconds` | Delay after collecting a pickup or harvesting a supported node. |
 
 **Restart after changing settings.** The default selection includes copper, tin, iron, silver, gold, celesthium and clay. Additional material IDs are listed in `ore-materials.txt` in this world's mod-data folder.
 
 Timers survive restarts, including offline time. Changing the delay affects new timers. Disabling respawns keeps existing timers saved; overdue respawns run when re-enabled.
 
+## World loot and wild resource timers
+
+Set `respawn_chests` and/or `respawn_lootables` to `true` to enable these experimental features. Each has its own delay; `600` is ten minutes and `3600` is one hour. Restart after changing settings.
+
+Only containers and nodes used or harvested while the feature is running are tracked. The mod asks the game to generate loot from its own templates; it does not copy a player's deposited items or restore a saved inventory. It checks for an existing object before spawning a replacement. Player storage, dropped bags, corpses, enemies, and resource nodes inside Flame Altar claims are excluded.
+
+Overdue replacements wait until a player is nearby and the area has had time to load. Allow about 15–30 extra seconds near the spot. Normal game resets and natural regrowth still apply and can happen before a custom timer. These timers do not prevent vanilla respawns. Not every quest object or world pickup is a supported resource node.
+
 ## Saved data and backups
 
-Terrain edits inside and outside claims are preserved. Loot boxes, other lootables, enemies, trees and other world objects keep their normal game behavior; custom respawn timers for those objects are not included.
+Terrain edits inside and outside claims are preserved. Enemy respawning and unsupported world objects keep their normal game behavior.
 
-Terrain and ore timers share a compact database. For the default world:
+Terrain, ore timers and world-loot/node timers share a compact database. For the default world:
 
 ```text
 savegame/world0-mod-data/kulcr.terrain-persistence/terrain-delta/records.redb

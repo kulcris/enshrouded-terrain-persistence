@@ -20,6 +20,7 @@ struct State {
     settings: crate::settings::Settings,
     journal: Option<Journal>,
     ores: Option<crate::ores::Ores>,
+    loot: Option<crate::lootables::Runtime>,
     restore: VecDeque<Brick>,
     queued: BTreeSet<Brick>,
     inflight: Vec<(Brick, TransactionId)>,
@@ -53,6 +54,13 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
         *configured.lock().unwrap() = value.clone();
     })?;
     let catalog = crate::ore_materials::Catalog::resolve(load)?;
+    let loot_api = match crate::lootables::Api::install(load) {
+        Ok(api) => Some(api),
+        Err(e) => {
+            enshwick::warn!("Chest/node timers unavailable: {e}");
+            None
+        }
+    };
     let terrain = load.terrain();
     let world = load.world()?;
     let voxels = load.voxels();
@@ -76,6 +84,14 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
                 s.restore.extend(keys);
                 enshwick::info!("Opened terrain journal: {} bricks",s.restore.len());
                 s.journal=Some(journal);
+                if settings.respawn_chests || settings.respawn_lootables {
+                    if let Some(api) = loot_api.clone() {
+                        match crate::lootables::Runtime::open(api, s.journal.as_ref().unwrap().store(), settings.clone()) {
+                            Ok(loot) => s.loot=Some(loot),
+                            Err(e) => enshwick::error!("Chest/node timers refused: {e}"),
+                        }
+                    }
+                }
                 if settings.respawn_ores {
                     match crate::ores::Ores::open_shared(data.join("ore-respawn"),s.journal.as_ref().unwrap().store()) {
                         Ok(queue)=>s.ores=Some(queue),
@@ -150,6 +166,12 @@ pub fn install(load: &mut Load<'_>) -> Result<(), Off> {
                 return ControlFlow::Continue(());
             }
             let ore_delay = s.settings.ore_respawn_seconds;
+            if let Some(loot) = s.loot.as_mut() {
+                if let Err(e) = loot.tick() {
+                    enshwick::error!("Chest/node timer update failed; disabled for this run: {e}");
+                    s.loot = None;
+                }
+            }
             // Snapshot native edits before any replay, including further edits to saved bricks.
             if let Some(queue) = s.ores.as_mut() {
                 let updates = hooks::take_ores(32);

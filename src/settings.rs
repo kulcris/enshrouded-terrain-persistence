@@ -1,8 +1,8 @@
-/// Terrain persistence and ore regeneration settings.
+/// Terrain persistence and world loot regeneration settings.
 #[enshwick::config]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
-    /// Regenerate mined ore and clay voxels after the delay. Loot boxes are unchanged.
+    /// Regenerate mined ore and clay voxels after the delay.
     pub respawn_ores: bool,
     /// Respawn delay in seconds. Nearby mining restarts the local countdown.
     /// Timers survive restarts, and time spent offline counts toward respawning.
@@ -12,6 +12,16 @@ pub struct Settings {
     /// Available IDs are listed in ore-materials.txt in this world's mod-data folder.
     #[config(range = 1..=127)]
     pub extra_ore_materials: Vec<u8>,
+    /// Refill empty world loot chests. Player-built storage is excluded.
+    pub respawn_chests: bool,
+    /// Seconds after a world chest is observed empty before attempting a refill.
+    #[config(range = 1..=31536000)]
+    pub chest_respawn_seconds: u64,
+    /// Respawn world pickups (including bandages) and supported harvested nodes outside claims.
+    pub respawn_lootables: bool,
+    /// Seconds after collecting a world pickup or harvesting a supported node.
+    #[config(range = 1..=31536000)]
+    pub lootable_respawn_seconds: u64,
 }
 
 /// Import the old global settings once. Keep explicitly configured new-world
@@ -102,6 +112,10 @@ impl Default for Settings {
             respawn_ores: true,
             ore_respawn_seconds: 1800,
             extra_ore_materials: Vec::new(),
+            respawn_chests: false,
+            chest_respawn_seconds: 1800,
+            respawn_lootables: false,
+            lootable_respawn_seconds: 1800,
         }
     }
 }

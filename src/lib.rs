@@ -3,6 +3,8 @@ mod codec;
 mod hooks;
 mod journal;
 mod legacy;
+mod loot_store;
+mod lootables;
 mod native;
 mod ore_materials;
 mod ores;

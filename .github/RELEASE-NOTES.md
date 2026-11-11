@@ -1,12 +1,10 @@
-**Compatibility update: bundled Enshwick Alpha 13.**
+Adds optional, independent respawn timers for world loot chests and lootables such as placed bandages and supported wild resource nodes. Ore and clay timers remain separate.
 
-This release updates the mod for Alpha 13 and includes that exact loader version, so Alpha 11 is no longer required. It also uses a compact database with batched terrain writes and indexed ore/clay timers.
+The new features are disabled by default. In your world's `settings.toml`, enable `respawn_chests` and/or `respawn_lootables`, then set `chest_respawn_seconds` and `lootable_respawn_seconds`. Both default to 1800 seconds. Restart after changing settings.
 
-### Installation and upgrading
+Timers share the compact world database and survive restarts. Overdue replacements wait for a nearby player. Player storage, dropped bags, corpses, enemies and claimed resource nodes are excluded. Vanilla world resets still apply; custom timers do not delay them.
 
-Stop your server and back up the save and mod data first. Extract the entire ZIP into your dedicated-server folder, replacing the included files. If upgrading from v0.4.x, remove the old loose `mods/terrain_persistence.dll`; the new file is `mods/terrain-persistence/terrain_persistence.dll`.
-
-Keep the old `mod-data` and `mod-configs` folders for automatic import. Settings now live beside each save, for example `savegame/world0-mod-settings/kulcr.terrain-persistence/settings.toml`. Original legacy records remain available for rollback. Check Alpha 13 compatibility for any other installed mods before replacing a shared loader.
+Enshwick Alpha 13 remains bundled. Stop the server and back up the save and its matching mod-data/settings folders before extracting the ZIP into the server folder.
 
 **Experimental — expect bugs.** This mod is "vibe coded" with AI assistance and has not been tested with extensive terrain changes or heavily modified worlds.
 
