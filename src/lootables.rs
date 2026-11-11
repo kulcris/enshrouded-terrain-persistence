@@ -36,6 +36,10 @@ pub struct Api {
     template_type: u32,
     name_offset: usize,
     inventory_empty: Field<bool>,
+    loot_empty: Field<bool>,
+    loot_parent: Field<u32>,
+    loot_labels: Field<u32>,
+    random_type: ComponentType,
     area_excluded: Field<bool>,
     orientation: usize,
     events: Arc<Mutex<VecDeque<(Record, Option<Entity>)>>>,
@@ -60,6 +64,11 @@ impl Api {
         let spawned_child = spawner_type.field::<Entity>(load, "spawnedEntityId")?;
         let inventory_empty = WritableType::resolve(load, "keen::ecs::InventoryEmptyState")?
             .field::<bool>(load, "isEmpty")?;
+        let loot_empty = WritableType::resolve(load, "keen::ecs::RandomLootLock")?
+            .field::<bool>(load, "isEmpty")?;
+        let random_type = WritableType::resolve(load, "keen::ecs::RandomLootContainer")?;
+        let loot_parent = random_type.field::<u32>(load, "parentNodeId")?;
+        let loot_labels = random_type.field::<u32>(load, "defaultLabelsId")?;
         let area_excluded = WritableType::resolve(load, "keen::ecs::AreaLootOverride")?
             .field::<bool>(load, "exclude")?;
         let excluded = [
@@ -98,6 +107,10 @@ impl Api {
             name_offset: usize::try_from(load.constant("template.name")?)
                 .map_err(|_| Off::new("template name offset"))?,
             inventory_empty,
+            loot_empty,
+            loot_parent,
+            loot_labels,
+            random_type: random_type.ty(),
             area_excluded,
             orientation,
             events: Arc::default(),
@@ -157,7 +170,6 @@ impl Api {
         let entity = self.parent(entity).unwrap_or(entity);
         if self.world.used_item(entity).is_some()
             || self.world.get(entity, self.area_excluded) == Some(true)
-            || self.world.get(entity, self.applied).is_none()
             || self
                 .excluded
                 .iter()
@@ -171,7 +183,9 @@ impl Api {
         let Some(kind) = self.kind(entity) else {
             return;
         };
-        if kind == 2 && !unclaimed(self.world, at) {
+        if kind == 2
+            && (self.world.get(entity, self.applied).is_none() || !unclaimed(self.world, at))
+        {
             return;
         }
         let Some(mut record) = self.record(entity, at, kind) else {
@@ -207,6 +221,9 @@ impl Api {
     }
     fn kind(&self, entity: Entity) -> Option<u8> {
         let guid = self.world.template(entity)?;
+        template_kind(&self.template_name(guid)?)
+    }
+    fn template_name(&self, guid: [u8; 16]) -> Option<String> {
         let data = self.host.game_resource(enshwick::abi::ResourceKey {
             guid,
             type_hash: self.template_type,
@@ -216,13 +233,17 @@ impl Api {
         let name = std::str::from_utf8(data.get(at..at + usize::try_from(len).ok()?)?)
             .ok()?
             .trim_end_matches('\0');
-        template_kind(name)
+        Some(name.to_owned())
     }
     fn inventory_root(&self, entity: Entity) -> Entity {
         self.world
             .get(entity, self.spawned_child)
             .filter(|e| self.world.position(*e).is_some())
             .unwrap_or(entity)
+    }
+    fn chest_is_empty(&self, entity: Entity) -> bool {
+        self.world.get(entity, self.inventory_empty) == Some(true)
+            || self.world.get(entity, self.loot_empty) == Some(true)
     }
     fn table(&self, entity: Entity) -> Option<[u8; 16]> {
         let p = self.world.component(entity, self.default_inventory.ty())?;
@@ -257,6 +278,10 @@ impl Api {
             due: 0,
             orientation,
             fill_table: self.table(entity).unwrap_or([0; 16]),
+            loot_context: [
+                self.world.get(entity, self.loot_parent).unwrap_or(0),
+                self.world.get(entity, self.loot_labels).unwrap_or(0),
+            ],
         })
     }
     pub fn clear(&self) {
@@ -293,6 +318,28 @@ impl Runtime {
     pub fn tick(&mut self) -> io::Result<()> {
         let now = crate::ores::now();
         for (entity, record, started) in std::mem::take(&mut self.initializing) {
+            if self.api.world.position(entity).is_none() {
+                if now.saturating_sub(started) < 10 {
+                    self.initializing.push((entity, record, started));
+                }
+                continue;
+            }
+            if record.key.kind == 1
+                && self
+                    .api
+                    .world
+                    .component(entity, self.api.random_type)
+                    .is_some()
+            {
+                self.api
+                    .world
+                    .set(entity, self.api.loot_parent, record.loot_context[0])
+                    .map_err(io::Error::other)?;
+                self.api
+                    .world
+                    .set(entity, self.api.loot_labels, record.loot_context[1])
+                    .map_err(io::Error::other)?;
+            }
             if self
                 .api
                 .world
@@ -320,8 +367,6 @@ impl Runtime {
                         .set(entity, self.api.applied, false)
                         .map_err(io::Error::other)?;
                 }
-            } else if now.saturating_sub(started) < 10 {
-                self.initializing.push((entity, record, started));
             }
         }
         let events: Vec<_> = self.api.events.lock().unwrap().drain(..).collect();
@@ -357,6 +402,24 @@ impl Runtime {
             .iter()
             .filter_map(|p| world.position(p.entity))
             .collect::<Vec<_>>();
+        if self.settings.respawn_chests && !players.is_empty() {
+            // Spent chests no longer have DefaultInventory. Native loot state
+            // lets us capture them without requiring that removed component.
+            for chest in world.entities(self.api.random_type) {
+                if self.api.chest_is_empty(chest.entity)
+                    && self.api.kind(chest.entity) == Some(1)
+                    && world.used_item(chest.entity).is_none()
+                {
+                    if let Some(mut record) = self.api.record(chest.entity, chest.position, 1) {
+                        if self.timers.get(&record.key)?.is_none() {
+                            record.due = now.saturating_add(self.settings.chest_respawn_seconds);
+                            self.timers.schedule(&record)?;
+                            enshwick::info!("Scheduled spent world chest at {:?}", chest.position);
+                        }
+                    }
+                }
+            }
+        }
         for (mut record, entity) in std::mem::take(&mut self.interactions) {
             let elapsed = now.saturating_sub(record.due);
             if elapsed < 2 {
@@ -366,8 +429,8 @@ impl Runtime {
             let at = enshwick::ecs::metres(record.key.position);
             let nearby = players.iter().any(|&p| near(p, at));
             let missing = world.position(entity).is_none();
-            let empty_chest = (record.key.kind == 1
-                || world.get(entity, self.api.applied).is_some())
+            let empty_chest = record.key.kind == 1
+                && self.api.chest_is_empty(entity)
                 && !self
                     .api
                     .inventories
@@ -375,6 +438,11 @@ impl Runtime {
                     .iter()
                     .any(|s| s.count > 0);
             if nearby && (missing || empty_chest) {
+                if record.key.kind == 1 && !missing {
+                    if let Some(current) = self.api.record(entity, at, 1) {
+                        record.loot_context = current.loot_context;
+                    }
+                }
                 record.due = if record.key.kind == 1 {
                     now.saturating_add(self.settings.chest_respawn_seconds)
                 } else {
@@ -416,13 +484,24 @@ impl Runtime {
                 .iter()
                 .any(|&p| near(p, enshwick::ecs::metres(key.position)))
         });
-        for record in due.into_iter().filter(|r| {
-            if r.key.kind == 1 {
+        for record in due {
+            // Retire timers written by the earlier experimental drop capture,
+            // including timers whose source entity has already disappeared.
+            if self
+                .api
+                .template_name(record.key.template)
+                .is_some_and(|name| generated_drop(&name))
+            {
+                self.timers.remove(&record.key)?;
+                continue;
+            }
+            if !(if record.key.kind == 1 {
                 self.settings.respawn_chests
             } else {
                 self.settings.respawn_lootables
+            }) {
+                continue;
             }
-        }) {
             let at = enshwick::ecs::metres(record.key.position);
             if !players.iter().any(|&p| near(p, at))
                 || (record.key.kind == 2 && !unclaimed(world, at))
@@ -448,7 +527,7 @@ impl Runtime {
                 // an uncollected PickupItem is empty from its inventory slots.
                 if record.key.kind == 1
                     && world.used_item(chest.entity).is_none()
-                    && world.get(chest.entity, self.api.inventory_empty) == Some(true)
+                    && self.api.chest_is_empty(chest.entity)
                     && !self
                         .api
                         .inventories
@@ -459,6 +538,9 @@ impl Runtime {
                     // Recreate the emptied world chest from its own vanilla
                     // template. No contents are copied or removed from storage.
                     let mut retry = record.clone();
+                    if let Some(current) = self.api.record(chest.entity, at, 1) {
+                        retry.loot_context = current.loot_context;
+                    }
                     retry.due = now.saturating_add(5);
                     self.timers.schedule(&retry)?;
                     if let Err(e) = world.destroy(chest.entity) {
@@ -498,6 +580,9 @@ fn near(a: [f64; 3], b: [f64; 3]) -> bool {
     distance_squared(a, b) <= 32.0 * 32.0
 }
 fn template_kind(name: &str) -> Option<u8> {
+    if generated_drop(name) {
+        return None;
+    }
     if name
         .split('_')
         .any(|part| part.eq_ignore_ascii_case("quest"))
@@ -512,6 +597,9 @@ fn template_kind(name: &str) -> Option<u8> {
         None
     }
 }
+fn generated_drop(name: &str) -> bool {
+    name.starts_with("LootPickup_Gravity_")
+}
 #[cfg(test)]
 mod tests {
     #[test]
@@ -520,6 +608,9 @@ mod tests {
             super::template_kind("LootChest_Random_silver_noMultiplayerScaling"),
             Some(1)
         );
+        assert_eq!(super::template_kind("LootChest_player_start"), Some(1));
+        assert_eq!(super::template_kind("LootPickup_Gravity_Wood_Loose"), None);
+        assert_eq!(super::template_kind("LootPickup_Gravity_Fabric"), None);
         assert_eq!(
             super::template_kind("LootPickup_Consumable_Bandage01"),
             Some(2)

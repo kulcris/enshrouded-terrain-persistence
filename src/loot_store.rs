@@ -52,6 +52,7 @@ pub struct Record {
     pub due: u64,
     pub orientation: [f32; 4],
     pub fill_table: [u8; 16],
+    pub loot_context: [u32; 2],
 }
 
 pub struct Timers {
@@ -122,7 +123,6 @@ impl Timers {
         }
         tx.commit().map_err(store::err)
     }
-    #[cfg(test)]
     pub fn remove(&mut self, key: &Key) -> io::Result<()> {
         let key = key.encode()?;
         let tx = self.store.db.begin_write().map_err(store::err)?;
@@ -196,18 +196,20 @@ impl Timers {
         Ok(out)
     }
 }
-fn pack(r: &Record) -> io::Result<[u8; 40]> {
+fn pack(r: &Record) -> io::Result<[u8; 48]> {
     validate_orientation(r.orientation)?;
-    let mut out = [0; 40];
+    let mut out = [0; 48];
     out[..8].copy_from_slice(&r.due.to_le_bytes());
     for (i, f) in r.orientation.iter().enumerate() {
         out[8 + i * 4..12 + i * 4].copy_from_slice(&f.to_le_bytes());
     }
     out[24..40].copy_from_slice(&r.fill_table);
+    out[40..44].copy_from_slice(&r.loot_context[0].to_le_bytes());
+    out[44..48].copy_from_slice(&r.loot_context[1].to_le_bytes());
     Ok(out)
 }
 fn unpack(key: &[u8], value: &[u8]) -> io::Result<Record> {
-    if value.len() != 24 && value.len() != 40 {
+    if ![24, 40, 48].contains(&value.len()) {
         return Err(invalid("invalid loot timer value length"));
     }
     let mut orientation = [0.; 4];
@@ -216,7 +218,7 @@ fn unpack(key: &[u8], value: &[u8]) -> io::Result<Record> {
     }
     validate_orientation(orientation)?;
     let mut fill_table = [0; 16];
-    if value.len() == 40 {
+    if value.len() >= 40 {
         fill_table.copy_from_slice(&value[24..40]);
     }
     Ok(Record {
@@ -224,6 +226,14 @@ fn unpack(key: &[u8], value: &[u8]) -> io::Result<Record> {
         due: u64::from_le_bytes(value[..8].try_into().unwrap()),
         orientation,
         fill_table,
+        loot_context: if value.len() == 48 {
+            [
+                u32::from_le_bytes(value[40..44].try_into().unwrap()),
+                u32::from_le_bytes(value[44..48].try_into().unwrap()),
+            ]
+        } else {
+            [0; 2]
+        },
     })
 }
 fn validate_orientation(o: [f32; 4]) -> io::Result<()> {
@@ -271,6 +281,7 @@ mod tests {
             due,
             orientation: [0.0, 0.5, 1.0, -0.25],
             fill_table: [n as u8 + 10; 16],
+            loot_context: [n as u32 + 1, n as u32 + 2],
         }
     }
 
@@ -345,7 +356,10 @@ mod tests {
         assert_eq!(decoded.fill_table, [0; 16]);
 
         let packed = pack(&record).unwrap();
-        assert_eq!(packed.len(), 40);
+        assert_eq!(packed.len(), 48);
+        let old = unpack(&key, &packed[..40]).unwrap();
+        assert_eq!(old.fill_table, record.fill_table);
+        assert_eq!(old.loot_context, [0; 2]);
         assert_eq!(unpack(&key, &packed).unwrap(), record);
     }
 
